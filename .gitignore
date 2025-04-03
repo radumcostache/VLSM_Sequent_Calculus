@@ -1,0 +1,9 @@
+*.vo
+*.vok
+*.vos
+*.conf
+*.glob
+*.cache
+*.d
+*.aux
+*.txt
