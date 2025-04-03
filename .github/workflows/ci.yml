@@ -31,4 +31,5 @@ jobs:
       - name: Build Coq project
         run: |
           eval $(opam env)
+          coq_makefile -f _CoqProject *.v -o Makefile
           make
