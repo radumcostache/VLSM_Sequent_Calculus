@@ -17,10 +17,14 @@ jobs:
         with:
           ocaml-compiler: 4.14.0
 
-      - name: Install Coq and dependencies
+      - name: Prepare OPAM and install dependencies
         run: |
+          opam switch create vlsm-ci 4.14.0
+          eval $(opam env)
+
           opam repo add coq-released https://coq.inria.fr/opam/released
           opam update
+
           opam install -y \
             coq.8.18.0 \
             coq-stdpp.1.9.0 \
@@ -31,5 +35,5 @@ jobs:
       - name: Build Coq project
         run: |
           eval $(opam env)
-          coq_makefile -f _CoqProject *.v -o Makefile
           make
+        working-directory: ${{ github.workspace }}
