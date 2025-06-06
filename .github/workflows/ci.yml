@@ -2,10 +2,7 @@ name: Coq CI
 
 on:
   push:
-    branches:
-      - main  # adjust if your main branch has a different name
   pull_request:
-
 jobs:
   build:
     runs-on: ubuntu-22.04
