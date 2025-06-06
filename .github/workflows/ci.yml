@@ -2,6 +2,8 @@ name: Coq CI
 
 on:
   push:
+    branches:
+      - main  # adjust if your main branch has a different name
   pull_request:
 
 jobs:
@@ -37,3 +39,38 @@ jobs:
           eval $(opam env)
           make
         working-directory: ${{ github.workspace }}
+
+      - name: Generate Coqdoc
+        run: |
+          eval $(opam env)
+          mkdir -p doc
+          coqdoc -utf8 -html -toc --index -d doc -R src VLSM_SC src/*.v
+
+      - name: Upload documentation artifact
+        uses: actions/upload-artifact@v3
+        with:
+          name: coqdoc-html
+          path: doc/
+
+  deploy:
+    needs: build
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      - name: Download built documentation
+        uses: actions/download-artifact@v3
+        with:
+          name: coqdoc-html
+          path: doc/
+
+      - name: Deploy to GitHub Pages
+        uses: peaceiris/actions-gh-pages@v3
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          publish_dir: ./doc
