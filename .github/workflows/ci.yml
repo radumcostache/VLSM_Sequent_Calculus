@@ -41,7 +41,8 @@ jobs:
         run: |
           eval $(opam env)
           mkdir -p doc
-          coqdoc -utf8 -html -d doc -R src VLSM_SC src/*.v
+          coqdoc -utf8 -html -toc -index list -d doc -R src VLSM_SC src/*.v
+          mv doc/toc.html doc/index.html
 
       - name: Upload documentation artifact
         uses: actions/upload-artifact@v4
