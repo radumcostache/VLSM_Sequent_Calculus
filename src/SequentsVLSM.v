@@ -14,9 +14,80 @@ Require Import Coq.Arith.Lt.
 Import Form.
 Import Calculus.
 
-(** * Sequent Calculus VLSMs *)
+
 
 Section sec_sequent_calculus.
+
+(** * Utilities *)
+
+Lemma cons_eq_app : forall (A : Type) (h : A) (t : list A),
+  h :: t = [h] ++ t.
+Proof.
+  intros. reflexivity.
+Qed.
+
+Lemma elem_to_exists {A} (P : A → Prop) (x : A) (l : list A) :
+  x ∈ l → P x → Exists P l.
+Proof.
+  intros H_in H_P.
+  apply elem_of_list_In in H_in.
+  apply Exists_exists.
+  exists x.
+  split; assumption.
+Qed.
+
+Lemma elem_of_list_split {A : Type} (x : A) (l : list A) :
+  x ∈ l -> ∃ l1 l2, l = l1 ++ x :: l2.
+Proof.
+  induction l as [| a l IH]; intros H.
+  - rewrite elem_of_nil in H. contradiction.
+  - rewrite elem_of_cons in H. destruct H as [-> | H'].
+    + exists [], l. reflexivity.
+    + destruct (IH H') as [l1 [l2 ->]]. exists (a :: l1), l2. reflexivity.
+Qed.
+
+
+Lemma input_valid_transition_in 
+  {message : Type}
+  {X : VLSM message}
+  (is s : state X)
+  (tr : list transition_item)
+  (Htrv : finite_valid_trace_init_to X is s tr)
+  (itm : transition_item)
+  (Hitm : itm ∈ tr) :
+    exists (tr_1 tr_2 : list transition_item) (lst_1 := finite_trace_last is tr_1),
+      tr = tr_1 ++ [itm] ++ tr_2 /\ input_valid_transition X (l itm) (lst_1, input itm) (destination itm, output itm).
+Proof.
+  remember (elem_of_list_split itm tr Hitm) as Hspl.
+  destruct HeqHspl, Hspl as [l1 [l2 Hspl]].
+  rewrite cons_eq_app in Hspl.
+  exists l1, l2.
+  intros.
+  split.
+  exact Hspl.
+  apply finite_valid_trace_init_to_forget_last in Htrv.
+  destruct Htrv as [Htrv _]. 
+  exact (input_valid_transition_to X is tr l1 l2 itm Htrv Hspl).
+Qed.
+
+
+Lemma nil_neq_app_cons : forall (A : Type) (l : list A) (x : A),
+  [] <> l ++ [x].
+Proof.
+  intros A l x H.
+  destruct l; simpl in H; discriminate.
+Qed.
+
+
+Lemma length_zero_nil : forall (A : Type) (l : list A),
+  length l = 0 -> l = [].
+Proof.
+  intros A l H.
+  destruct l as [| x xs].
+  - reflexivity.
+  - simpl in H. discriminate H.
+Qed.
+
 
 #[local] Notation "⊤" := FTop.
 #[local] Notation "⊥" := FBot.
@@ -24,8 +95,9 @@ Section sec_sequent_calculus.
 #[local] Notation "x ∧ y" := (FConj x y) (at level 80, right associativity).
 #[local] Notation "x → y" := (FImpl x y) (at level 99, y at level 200, right associativity).
 
+(** * Sequent Calculus VLSMs *)
 
-(** * Encoding Sequents *)
+(** ** Labels for individual VLSMs *)
 
 
 Inductive RecEmitLabel : Type := 
@@ -44,33 +116,16 @@ Inductive XCHGLabel : Type :=
 | exchangeEmit.
 
 
-(** Define the structure of sequents: a pair of lists of formulas. *)
+(** ** VLSM specifications *)
 
-
-Definition seq_left (s : Sequent) : list Formula :=
-  match s with
-  | seq Gamma _ => Gamma
-  end.
-
-Definition seq_right (s : Sequent) : list Formula :=
-  match s with
-  | seq _ Delta => Delta
-  end.
-
-(** * VLSM for the Identity Rule *)
-
-(** Labels for the identity rule transitions are formulas. *)
+(** *** ID rule *)
 Definition V_ID_label := Formula.
 
-(** States are unit *)
 Definition V_ID_state := unit.
 
 Definition V_ID_vlsm_type : VLSMType Sequent :=
   {| label := V_ID_label;
      state := V_ID_state; |}.
-
-(** Transition function for the identity rule. *)
-
 
 Definition V_ID_machine : VLSMMachine V_ID_vlsm_type :=
   {| initial_state_prop := fun _ => True;
@@ -82,53 +137,48 @@ Definition V_ID_machine : VLSMMachine V_ID_vlsm_type :=
 Definition V_ID : VLSM Sequent :=
   mk_vlsm V_ID_machine.
 
-  (** * VLSM for the Bottom Rule *)
 
-(** Labels for the bottom rule transitions are unit. *)
+(** *** ⊥ rule *)
+
 Definition V_BOT_label := unit.
 
-(** States are unit. *)
 Definition V_BOT_state := unit.
 
 Definition V_BOT_vlsm_type : VLSMType Sequent :=
   {| label := V_BOT_label;
      state := V_BOT_state; |}.
 
-(** Transition function for the bottom rule. *)
 Definition V_BOT_machine : VLSMMachine V_BOT_vlsm_type :=
   {| initial_state_prop := fun _ => True;
      s0 := populate (exist _ () I);
      initial_message_prop := fun _ => False;
      transition := fun _ _ => ((), Some (seq [⊥] []));
-     (* Might change it later *)
      valid := fun _ som => som.2 = None |}.
 
 Definition V_BOT : VLSM Sequent :=
   mk_vlsm V_BOT_machine.
 
-  (** * VLSM for the Top Rule *)
+(** *** ⊤ rule *)
 
-(** Labels for the bottom rule transitions are unit. *)
 Definition V_TOP_label := unit.
 
-(** States are unit. *)
 Definition V_TOP_state := unit.
 
 Definition V_TOP_vlsm_type : VLSMType Sequent :=
   {| label := V_TOP_label;
      state := V_TOP_state; |}.
 
-(* TODO: Check if we cannot abstract the TOP/BOT machines as in Formulas.v *)
 Definition V_TOP_machine : VLSMMachine V_TOP_vlsm_type :=
   {| initial_state_prop := fun _ => True;
      s0 := populate (exist _ () I);
      initial_message_prop := fun _ => False;
      transition := fun _ _ => ((), Some (seq [] [⊤]));
-     (* Might change it later *)
      valid := fun _ som =>  som.2 = None |}.
 
 Definition V_TOP : VLSM Sequent :=
   mk_vlsm V_TOP_machine.
+
+(** *** ⇒→ rule *)
 
 Definition V_IMP_RIGHT_label := unit.
 Definition V_IMP_RIGHT_state := unit.
@@ -155,17 +205,15 @@ Definition V_IMP_RIGHT_machine : VLSMMachine V_IMP_RIGHT_vlsm_type :=
 Definition V_IMP_RIGHT : VLSM Sequent :=
     mk_vlsm V_IMP_RIGHT_machine.
 
-(** Labels for the conjunction left rule transitions are unit. *)
-Definition V_CONJ_LEFT_1_label := Formula.
+(** *** ∧⇒1 rule *)
 
-(** States are unit. *)
+Definition V_CONJ_LEFT_1_label := Formula.
 Definition V_CONJ_LEFT_1_state := unit.
 
 Definition V_CONJ_LEFT_1_vlsm_type : VLSMType Sequent :=
   {| label := V_CONJ_LEFT_1_label;
      state := V_CONJ_LEFT_1_state; |}.
 
-(** Transition function for the conjunction left rule. *)
 Definition V_CONJ_LEFT_1_machine : VLSMMachine V_CONJ_LEFT_1_vlsm_type :=
   {| initial_state_prop := fun _ => True;
      s0 := populate (exist _ () I);
@@ -185,17 +233,15 @@ Definition V_CONJ_LEFT_1_machine : VLSMMachine V_CONJ_LEFT_1_vlsm_type :=
 Definition V_CONJ_LEFT_1 : VLSM Sequent :=
   mk_vlsm V_CONJ_LEFT_1_machine.
 
-(** Labels for the conjunction left rule transitions are unit. *)
-Definition V_CONJ_LEFT_2_label := Formula.
+(** *** ∧⇒2 rule *)
 
-(** States are unit. *)
+Definition V_CONJ_LEFT_2_label := Formula.
 Definition V_CONJ_LEFT_2_state := unit.
 
 Definition V_CONJ_LEFT_2_vlsm_type : VLSMType Sequent :=
   {| label := V_CONJ_LEFT_2_label;
      state := V_CONJ_LEFT_2_state; |}.
 
-(** Transition function for the conjunction left rule. *)
 Definition V_CONJ_LEFT_2_machine : VLSMMachine V_CONJ_LEFT_2_vlsm_type :=
   {| initial_state_prop := fun _ => True;
      s0 := populate (exist _ () I);
@@ -214,21 +260,20 @@ Definition V_CONJ_LEFT_2_machine : VLSMMachine V_CONJ_LEFT_2_vlsm_type :=
 
 Definition V_CONJ_LEFT_2 : VLSM Sequent :=
   mk_vlsm V_CONJ_LEFT_2_machine.
-(** Labels for the conjunction right rule transitions are unit. *)
-Definition V_CONJ_RIGHT_label := RecEmitLabel.
 
-(** States are unit. *)
+(** *** ⇒∧ rule *)
+
+Definition V_CONJ_RIGHT_label := RecEmitLabel.
 Definition V_CONJ_RIGHT_state := option Sequent.
 
 Definition V_CONJ_RIGHT_vlsm_type : VLSMType Sequent :=
   {| label := V_CONJ_RIGHT_label;
      state := V_CONJ_RIGHT_state; |}.
 
-(** Transition function for the conjunction right rule. *)
 
 Definition V_CONJ_RIGHT_machine : VLSMMachine V_CONJ_RIGHT_vlsm_type :=
   {| initial_state_prop := fun s => s = None;
-     s0 := populate (exist _ None eq_refl); (* Initial state with empty Gamma and Delta *)
+     s0 := populate (exist _ None eq_refl);
      initial_message_prop := fun _ => False;
      transition := fun l '(st, msg) =>
         match l, st, msg with 
@@ -251,17 +296,17 @@ Definition V_CONJ_RIGHT_machine : VLSMMachine V_CONJ_RIGHT_vlsm_type :=
 Definition V_CONJ_RIGHT : VLSM Sequent :=
   mk_vlsm V_CONJ_RIGHT_machine.
 
-(** Labels for the disjunction left rule transitions are unit. *)
+
+(** *** ∨⇒ rule *)
+
 Definition V_DISJ_LEFT_label := RecEmitLabel.
 
-(** States are unit. *)
 Definition V_DISJ_LEFT_state := option Sequent.
 
 Definition V_DISJ_LEFT_vlsm_type : VLSMType Sequent :=
   {| label := V_DISJ_LEFT_label;
      state := V_DISJ_LEFT_state; |}.
 
-(** Transition function for the disjunction left rule. *)
 Definition V_DISJ_LEFT_machine : VLSMMachine V_DISJ_LEFT_vlsm_type :=
   {| initial_state_prop := fun s => s = None;
      s0 := populate (exist _ None eq_refl);
@@ -291,16 +336,15 @@ Definition V_DISJ_LEFT_machine : VLSMMachine V_DISJ_LEFT_vlsm_type :=
 Definition V_DISJ_LEFT : VLSM Sequent :=
   mk_vlsm V_DISJ_LEFT_machine.
 
-Definition V_DISJ_RIGHT_1_label := Formula.
+(** *** ⇒∨1 rule *)
 
-(** States are unit. *)
+Definition V_DISJ_RIGHT_1_label := Formula.
 Definition V_DISJ_RIGHT_1_state := unit.
 
 Definition V_DISJ_RIGHT_1_vlsm_type : VLSMType Sequent :=
   {| label := V_DISJ_RIGHT_1_label;
      state := V_DISJ_RIGHT_1_state; |}.
 
-(** Transition function for the disjunction right rule. *)
 Definition V_DISJ_RIGHT_1_machine : VLSMMachine V_DISJ_RIGHT_1_vlsm_type :=
   {| initial_state_prop := fun _ => True;
      s0 := populate (exist _ () I);
@@ -320,16 +364,16 @@ Definition V_DISJ_RIGHT_1_machine : VLSMMachine V_DISJ_RIGHT_1_vlsm_type :=
 Definition V_DISJ_RIGHT_1 : VLSM Sequent :=
   mk_vlsm V_DISJ_RIGHT_1_machine.
 
-Definition V_DISJ_RIGHT_2_label := Formula.
 
-(** States are unit. *)
+(** *** ⇒∨2 rule *)
+
+Definition V_DISJ_RIGHT_2_label := Formula.
 Definition V_DISJ_RIGHT_2_state := unit.
 
 Definition V_DISJ_RIGHT_2_vlsm_type : VLSMType Sequent :=
   {| label := V_DISJ_RIGHT_2_label;
      state := V_DISJ_RIGHT_2_state; |}.
 
-(** Transition function for the disjunction right rule. *)
 Definition V_DISJ_RIGHT_2_machine : VLSMMachine V_DISJ_RIGHT_2_vlsm_type :=
   {| initial_state_prop := fun _ => True;
      s0 := populate (exist _ () I);
@@ -348,6 +392,8 @@ Definition V_DISJ_RIGHT_2_machine : VLSMMachine V_DISJ_RIGHT_2_vlsm_type :=
 
 Definition V_DISJ_RIGHT_2 : VLSM Sequent :=
   mk_vlsm V_DISJ_RIGHT_2_machine.
+
+(** *** WL rule *)
 
 Definition V_WK_LEFT_state := unit.
 Definition V_WK_LEFT_label := Formula.
@@ -373,6 +419,9 @@ Definition V_WK_LEFT_machine : VLSMMachine V_WK_LEFT_vlsm_type :=
 Definition V_WK_LEFT : VLSM Sequent :=
     mk_vlsm V_WK_LEFT_machine.
 
+
+(** *** WR rule *)
+
 Definition V_WK_RIGHT_state := unit.
 Definition V_WK_RIGHT_label := Formula.
 
@@ -396,6 +445,8 @@ Definition V_WK_RIGHT_machine : VLSMMachine V_WK_RIGHT_vlsm_type :=
          end; |}.
 Definition V_WK_RIGHT : VLSM Sequent :=
     mk_vlsm V_WK_RIGHT_machine.
+
+(** *** CL rule *)
 
 Definition V_CT_LEFT_state := unit.
 Definition V_CT_LEFT_label := unit.
@@ -423,6 +474,8 @@ Definition V_CT_LEFT_machine : VLSMMachine V_CT_LEFT_vlsm_type :=
          end; |}.
 Definition V_CT_LEFT : VLSM Sequent :=
     mk_vlsm V_CT_LEFT_machine.
+
+(** *** CR rule *)
 
 Definition V_CT_RIGHT_state := unit.
 Definition V_CT_RIGHT_label := unit.
@@ -453,6 +506,8 @@ Definition V_CT_RIGHT_machine : VLSMMachine V_CT_RIGHT_vlsm_type :=
 Definition V_CT_RIGHT : VLSM Sequent :=
     mk_vlsm V_CT_RIGHT_machine.
 
+(** *** →⇒ rule *)
+
 Definition V_IMP_LEFT_label := RecEmitLeftRight.
 Definition V_IMP_LEFT_state := option Sequent.
 
@@ -460,7 +515,6 @@ Definition V_IMP_LEFT_vlsm_type : VLSMType Sequent :=
   {| label := V_IMP_LEFT_label;
      state := V_IMP_LEFT_state; |}.
 
-(** Transition function for the implication left rule. *)
 Definition V_IMP_LEFT_machine : VLSMMachine V_IMP_LEFT_vlsm_type :=
   {| initial_state_prop := fun s => s = None;
      s0 := populate (exist _ None eq_refl);
@@ -491,49 +545,7 @@ Definition V_IMP_LEFT_machine : VLSMMachine V_IMP_LEFT_vlsm_type :=
 Definition V_IMP_LEFT : VLSM Sequent :=
   mk_vlsm V_IMP_LEFT_machine.
 
-Definition V_CUT_label := RecEmitLeftRight.
-Definition V_CUT_state := option Sequent.
-
-Definition V_CUT_vlsm_type : VLSMType Sequent :=
-  {| label := V_CUT_label;
-     state := V_CUT_state; |}.
-
-(** Transition function for the cut rule. *)
-Definition V_CUT_machine : VLSMMachine V_CUT_vlsm_type :=
-  {| initial_state_prop := fun s => s = None;
-     s0 := populate (exist _ None eq_refl);
-     initial_message_prop := fun _ => False;
-
-     transition := fun l som =>
-       match l, som.1, som.2 with
-       | recLeft, None, Some (seq (A :: Γ) Δ) =>
-           (Some (seq (A :: Γ) Δ), None)
-       | recRight, None, Some (seq Γ (A :: Δ)) =>
-           (Some (seq Γ (A :: Δ)), None)
-       | emitLeft, Some (seq (A :: Gamma) Delta), Some (seq Gamma' (A' :: Delta')) =>
-           if decide (A = A') then (None, Some (seq (Gamma ++ Gamma') (Delta ++ Delta')))
-           else (None, None)
-       | emitRight, Some (seq Gamma' (A :: Delta')), Some (seq (A' :: Gamma) Delta) =>
-           if decide (A = A') then (None, Some (seq (Gamma ++ Gamma') (Delta ++ Delta')))
-           else (None, None)
-       | _, _, _ => (None, None)
-       end;
-
-     valid := fun l som =>
-       match l, som.1, som.2 with
-       | recLeft, None, Some (seq (A :: Γ) Δ) => True
-       | recRight, None, Some (seq Γ (A :: Δ)) => True
-       | emitLeft, Some (seq (A :: Gamma) Delta), Some (seq Gamma' (A' :: Delta')) => 
-            if decide (A = A') then True 
-            else False
-       | emitRight, Some (seq Gamma' (A :: Delta')), Some (seq (A' :: Gamma) Delta) =>
-            if decide (A = A') then True 
-            else False
-       | _, _, _ => False
-       end; |}.
-Definition V_CUT : VLSM Sequent :=
-    mk_vlsm V_CUT_machine.
-
+(** *** EL rule *)
 
 Definition V_XCHG_LEFT_label := XCHGLabel.
 Definition V_XCHG_LEFT_state := prod (list Formula) (option Sequent).
@@ -566,6 +578,8 @@ Definition V_XCHG_LEFT_machine : VLSMMachine V_XCHG_LEFT_vlsm_type :=
 Definition V_XCHG_LEFT : VLSM Sequent := 
   mk_vlsm V_XCHG_LEFT_machine.
 
+(** *** ER rule *)
+
 Definition V_XCHG_RIGHT_label := XCHGLabel.
 Definition V_XCHG_RIGHT_state := prod (list Formula) (option Sequent).
 
@@ -597,6 +611,8 @@ Definition V_XCHG_RIGHT_machine : VLSMMachine V_XCHG_RIGHT_vlsm_type :=
 
 Definition V_XCHG_RIGHT : VLSM Sequent := 
   mk_vlsm V_XCHG_RIGHT_machine.
+
+(** ** GK free composition VLSM*)
 
 Inductive sequent_index : Type :=
 | I_V_ID
@@ -655,6 +671,8 @@ Proof.
   - contradiction.
 Qed.
 
+(** ** Soundness *)
+
 Definition vlsm_valid_sequent : Sequent -> Prop := 
   fun Sq => valid_message_prop sequent_vlsm (Sq).
 
@@ -663,14 +681,10 @@ Definition derivable_sequent : Sequent -> Prop :=
 
 Definition s0_seq := ` (composite_s0 sequent_vlsm_components).
 
+
+(** *** Invariants for XCHG rules *)
 Definition s_xchg_left (s : V_XCHG_LEFT_state) : (state sequent_vlsm) := 
   state_update sequent_vlsm_components s0_seq I_V_XCHG_LEFT s.
-
-Lemma cons_eq_app : forall (A : Type) (h : A) (t : list A),
-  h :: t = [h] ++ t.
-Proof.
-  intros. reflexivity.
-Qed.
 
 Lemma xchg_left_vlsm_capt : 
   forall (Π Γ Δ : list Formula) (A B : Formula), 
@@ -826,6 +840,8 @@ Proof.
   by eapply input_valid_transition_destination.
 
 Qed.
+
+(** *** Soundness with GK' *)
 
 Theorem derivable_sequents_vlsm_valid : 
   forall (Γ Δ : list Formula), 
@@ -1023,20 +1039,18 @@ Proof.
   - by apply xchg_right_vlsm_valid.
 Qed.
 
-(* Property defined on traces, meaning that all messages, input and output, represent derivable_sequents *)
-Definition trace_messages_derivable_sequents (tr : list (transition_item sequent_vlsm)): Prop :=
-  forall (m: Sequent), trace_has_message item_sends_or_receives m tr -> derivable_sequent m.
+(** ** Completeness *)
 
-Lemma elem_to_exists {A} (P : A → Prop) (x : A) (l : list A) :
-  x ∈ l → P x → Exists P l.
+(** Helper lemma for composite types *)
+Lemma VLSM_comp_eq: VLSM_eq {| vlsm_type := composite_type sequent_vlsm_components; vlsm_machine := free_composite_vlsm_machine sequent_vlsm_components |}
+                          (composite_vlsm sequent_vlsm_components (free_constraint sequent_vlsm_components)).
 Proof.
-  intros H_in H_P.
-  apply elem_of_list_In in H_in.
-  apply Exists_exists.
-  exists x.
-  split; assumption.
+  apply free_composite_vlsm_spec.
 Qed.
 
+(** Property defined on traces, meaning that all messages, input and output, represent derivable_sequents *)
+Definition trace_messages_derivable_sequents (tr : list (transition_item sequent_vlsm)): Prop :=
+  forall (m: Sequent), trace_has_message item_sends_or_receives m tr -> derivable_sequent m.
 
 Lemma elem_derivable_input :
   forall (tr : list (transition_item sequent_vlsm)) (e : transition_item) (m : Sequent), 
@@ -1054,7 +1068,7 @@ Proof.
   by left.  
 Qed.
 
-(* Helper lemma to prove that trace_messages_derivable_sequents is preserved over app*)
+(** Helper lemma to prove that trace_messages_derivable_sequents is preserved over app*)
 Lemma trace_messages_derivable_sequents_app : 
   forall (tr_1 tr_2 : list (transition_item sequent_vlsm)), 
       trace_messages_derivable_sequents tr_1 ->
@@ -1069,67 +1083,9 @@ Proof.
   - exact (Htr1 m H).
   - exact (Htr2 m H).
 Qed.
-  
-
-Lemma elem_of_list_split {A : Type} (x : A) (l : list A) :
-  x ∈ l -> ∃ l1 l2, l = l1 ++ x :: l2.
-Proof.
-  induction l as [| a l IH]; intros H.
-  - rewrite elem_of_nil in H. contradiction.
-  - rewrite elem_of_cons in H. destruct H as [-> | H'].
-    + exists [], l. reflexivity.
-    + destruct (IH H') as [l1 [l2 ->]]. exists (a :: l1), l2. reflexivity.
-Qed.
 
 
-Lemma input_valid_transition_in 
-  {message : Type}
-  {X : VLSM message}
-  (is s : state X)
-  (tr : list transition_item)
-  (Htrv : finite_valid_trace_init_to X is s tr)
-  (itm : transition_item)
-  (Hitm : itm ∈ tr) :
-    exists (tr_1 tr_2 : list transition_item) (lst_1 := finite_trace_last is tr_1),
-      tr = tr_1 ++ [itm] ++ tr_2 /\ input_valid_transition X (l itm) (lst_1, input itm) (destination itm, output itm).
-Proof.
-  remember (elem_of_list_split itm tr Hitm) as Hspl.
-  destruct HeqHspl, Hspl as [l1 [l2 Hspl]].
-  rewrite cons_eq_app in Hspl.
-  exists l1, l2.
-  intros.
-  split.
-  exact Hspl.
-  apply finite_valid_trace_init_to_forget_last in Htrv.
-  destruct Htrv as [Htrv _]. 
-  exact (input_valid_transition_to X is tr l1 l2 itm Htrv Hspl).
-Qed.
-
-Lemma VLSM_comp_eq: VLSM_eq {| vlsm_type := composite_type sequent_vlsm_components; vlsm_machine := free_composite_vlsm_machine sequent_vlsm_components |}
-                          (composite_vlsm sequent_vlsm_components (free_constraint sequent_vlsm_components)).
-Proof.
-  apply free_composite_vlsm_spec.
-Qed.
-
-Lemma nil_neq_app_cons : forall (A : Type) (l : list A) (x : A),
-  [] <> l ++ [x].
-Proof.
-  intros A l x H.
-  destruct l; simpl in H; discriminate.
-Qed.
-
-
-Lemma length_zero_nil : forall (A : Type) (l : list A),
-  length l = 0 -> l = [].
-Proof.
-  intros A l H.
-  destruct l as [| x xs].
-  - reflexivity.
-  - simpl in H. discriminate H.
-Qed.
-
-
-(* Helper lemma to prove that all valid traces, use as i/o only derivable sequents as messages *)
+(** Helper lemma to prove that all valid traces, use as i/o only derivable sequents as messages *)
 
 Lemma all_valid_traces_derivable_sequents : 
   forall {si sf : state sequent_vlsm} {tr : list (transition_item sequent_vlsm)}, 
@@ -1144,7 +1100,7 @@ Proof.
   intros m Hemp.
   inversion Hemp.
 
-  (* Input should be none or derivable *)
+  (** Input should be none or derivable *)
   assert (some_input_derivable: forall (s : Sequent), iom = Some s -> derivable_sequent s). 
   {
     intros s0.
@@ -1155,7 +1111,7 @@ Proof.
     specialize (IHHtr2 s0).
 
     destruct (has_last_or_null iom_tr).
-    - (* iom is produced in iom_tr*)
+    - (** iom is produced in iom_tr*)
       destruct s1 as [l' [a Heq]].
       apply IHHtr2.
       rewrite Heq.
@@ -1173,32 +1129,33 @@ Proof.
   apply Exists_app in Htrapp.
   destruct Htrapp.
 
-  (* If the sequent comes from the prefix tr, 
+  (** If the sequent comes from the prefix tr, 
     we already know it's derivable from the induction Hypothesis *)
 
-  (* unfold trace_messages_derivable_sequents in IHHtr1. *)
+  (** unfold trace_messages_derivable_sequents in IHHtr1. *)
   exact (IHHtr1 m H).
   
-  (* The remaining case is with m in the last transtion as I/O *)
+  (** The remaining case is with m in the last transtion as I/O *)
 
   inversion H; [| by inversion H1].
   subst.
   inversion H1; simpl in H0; subst.
 
-  (* Input of the current transition is m, we already asserted that it is derivable *)
+  (** Input of the current transition is m, we already asserted that it is derivable *)
   subst.
   apply (some_input_derivable m).
   reflexivity.
 
-  (* Output, the hard case, where we have to go back through the trace. *)
-  (* To reverse the trace we should first check the label and the vlsm emiting m *)
+  (** Output, the hard case, where we have to look back in the trace. *)
+  (** To reverse the trace we should first check the label and the vlsm emiting m *)
   destruct l as [idx lbl], idx, iom; 
   
-  (* Unravel validity predicates *)
+  (** Unravel validity predicates *)
   destruct Ht as [[Hv1 [Hv2 Hv3]] Htr]; 
 
-  (* Filter out invalid transitions *)
+  (** Filter out invalid transitions *)
   try by inversion Hv3.
+  (** Now we check all possible rules for derivation *)
   - simpl in Htr.
     injection Htr as _ Hlb.
     subst.
@@ -1230,6 +1187,7 @@ Proof.
     }
     destruct Hders0 as [hs0].
     simpl in Htr.
+    (** We will look back in the trace to find the transition on which the captured sequent has been received *)
     destruct lbl, (s I_V_IMP_LEFT) eqn:Hse; (try by inversion Hse);
     [| | destruct s1 as [[| B Γ'] [| A Δ]] | destruct s1 as [[| B Γ'] [|A Δ]]]; 
       (try by inversion Hse);
@@ -2297,4 +2255,71 @@ Proof.
       exact (all_valid_traces_derivable_sequents Htr_full). 
 Qed.
 
+Theorem vlsm_SC_equiv : 
+  forall (m : Sequent),
+    vlsm_valid_sequent(m) <-> derivable_sequent(m).
+Proof. 
+  intros m.
+  split.
+  - exact (vlsm_valid_derivable_sequent m).
+  - destruct m.
+    exact (derivable_sequents_vlsm_valid Gamma Delta).
+Qed.
+
+Theorem CL_theorem_vlsm_equiv : 
+  forall (ϕ : Formula),
+    vlsm_valid_sequent (seq [] [ϕ]) <-> derivable_sequent (seq [] [ϕ]).
+Proof.
+  intros ϕ.
+  exact (vlsm_SC_equiv (seq [] [ϕ])).
+Qed.
+
+
 End sec_sequent_calculus.
+
+Section cut_rule.
+
+(** * The CUT rule *)
+Definition V_CUT_label := RecEmitLeftRight.
+Definition V_CUT_state := option Sequent.
+
+Definition V_CUT_vlsm_type : VLSMType Sequent :=
+  {| label := V_CUT_label;
+     state := V_CUT_state; |}.
+
+Definition V_CUT_machine : VLSMMachine V_CUT_vlsm_type :=
+  {| initial_state_prop := fun s => s = None;
+     s0 := populate (exist _ None eq_refl);
+     initial_message_prop := fun _ => False;
+
+     transition := fun l som =>
+       match l, som.1, som.2 with
+       | recLeft, None, Some (seq (A :: Γ) Δ) =>
+           (Some (seq (A :: Γ) Δ), None)
+       | recRight, None, Some (seq Γ (A :: Δ)) =>
+           (Some (seq Γ (A :: Δ)), None)
+       | emitLeft, Some (seq (A :: Gamma) Delta), Some (seq Gamma' (A' :: Delta')) =>
+           if decide (A = A') then (None, Some (seq (Gamma ++ Gamma') (Delta ++ Delta')))
+           else (None, None)
+       | emitRight, Some (seq Gamma' (A :: Delta')), Some (seq (A' :: Gamma) Delta) =>
+           if decide (A = A') then (None, Some (seq (Gamma ++ Gamma') (Delta ++ Delta')))
+           else (None, None)
+       | _, _, _ => (None, None)
+       end;
+
+     valid := fun l som =>
+       match l, som.1, som.2 with
+       | recLeft, None, Some (seq (A :: Γ) Δ) => True
+       | recRight, None, Some (seq Γ (A :: Δ)) => True
+       | emitLeft, Some (seq (A :: Gamma) Delta), Some (seq Gamma' (A' :: Delta')) => 
+            if decide (A = A') then True 
+            else False
+       | emitRight, Some (seq Gamma' (A :: Delta')), Some (seq (A' :: Gamma) Delta) =>
+            if decide (A = A') then True 
+            else False
+       | _, _, _ => False
+       end; |}.
+Definition V_CUT : VLSM Sequent :=
+    mk_vlsm V_CUT_machine.
+
+End cut_rule.

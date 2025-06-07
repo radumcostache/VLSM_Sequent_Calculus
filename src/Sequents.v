@@ -5,6 +5,8 @@ Context
   
 Module Export Form.
 
+(** * Formulas *)
+
 Inductive symbol : Type :=
 | Top
 | Bot
@@ -48,9 +50,10 @@ Module Calculus.
 #[local] Notation "x ∧ y" := (FConj x y) (at level 80, right associativity).
 #[local] Notation "x → y" := (FImpl x y) (at level 99, y at level 200, right associativity).
 
+(** * Sequents and Derivations *)
+
 Inductive Sequent : Type :=
 | seq (Gamma Delta : list Formula) : Sequent.
-
 
 Inductive SC_derivation : nat -> Sequent -> Prop :=
   | SC_ID (A : Formula) : SC_derivation 0 (seq [A] [A])
@@ -153,6 +156,8 @@ Inductive GK_derivation : nat -> Sequent -> Prop :=
       (Hd : GK_derivation h (seq Γ (Δ ++ A :: B :: Π))) :
       GK_derivation (S h) (seq Γ (Δ ++ B :: A :: Π)).
 
+(** * Soundness with GK *)
+
 Lemma SC_is_GK : forall (k : nat) (Γ Δ : list Formula), 
     SC_derivation k (seq Γ Δ) -> 
         exists (k' : nat), GK_derivation k' (seq Γ Δ).
@@ -212,6 +217,7 @@ Proof.
       exact (GK_XCHG_RIGHT _ _ _ _ _ _ H1).
 Qed.
 
+(** * Completeness with GK *)
 Lemma GK_is_SC : forall (k : nat) (Γ Δ : list Formula), 
     GK_derivation k (seq Γ Δ) -> 
         exists (k' : nat), SC_derivation k' (seq Γ Δ).
