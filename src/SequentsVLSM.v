@@ -748,7 +748,7 @@ Proof.
     by rewrite state_update_id.
 Qed. 
 
-Lemma xchg_left_vlsm_valid : 
+Lemma xchg_left_vlsm_valid :
   forall (Π Γ Δ : list Formula) (A B : Formula), 
     vlsm_valid_sequent (seq (Γ ++ A :: B :: Δ) Π) -> 
       vlsm_valid_sequent (seq (Γ ++ B :: A :: Δ) Π).
@@ -2274,52 +2274,4 @@ Proof.
   exact (vlsm_SC_equiv (seq [] [ϕ])).
 Qed.
 
-
 End sec_sequent_calculus.
-
-Section cut_rule.
-
-(** * The CUT rule *)
-Definition V_CUT_label := RecEmitLeftRight.
-Definition V_CUT_state := option Sequent.
-
-Definition V_CUT_vlsm_type : VLSMType Sequent :=
-  {| label := V_CUT_label;
-     state := V_CUT_state; |}.
-
-Definition V_CUT_machine : VLSMMachine V_CUT_vlsm_type :=
-  {| initial_state_prop := fun s => s = None;
-     s0 := populate (exist _ None eq_refl);
-     initial_message_prop := fun _ => False;
-
-     transition := fun l som =>
-       match l, som.1, som.2 with
-       | recLeft, None, Some (seq (A :: Γ) Δ) =>
-           (Some (seq (A :: Γ) Δ), None)
-       | recRight, None, Some (seq Γ (A :: Δ)) =>
-           (Some (seq Γ (A :: Δ)), None)
-       | emitLeft, Some (seq (A :: Gamma) Delta), Some (seq Gamma' (A' :: Delta')) =>
-           if decide (A = A') then (None, Some (seq (Gamma ++ Gamma') (Delta ++ Delta')))
-           else (None, None)
-       | emitRight, Some (seq Gamma' (A :: Delta')), Some (seq (A' :: Gamma) Delta) =>
-           if decide (A = A') then (None, Some (seq (Gamma ++ Gamma') (Delta ++ Delta')))
-           else (None, None)
-       | _, _, _ => (None, None)
-       end;
-
-     valid := fun l som =>
-       match l, som.1, som.2 with
-       | recLeft, None, Some (seq (A :: Γ) Δ) => True
-       | recRight, None, Some (seq Γ (A :: Δ)) => True
-       | emitLeft, Some (seq (A :: Gamma) Delta), Some (seq Gamma' (A' :: Delta')) => 
-            if decide (A = A') then True 
-            else False
-       | emitRight, Some (seq Gamma' (A :: Delta')), Some (seq (A' :: Gamma) Delta) =>
-            if decide (A = A') then True 
-            else False
-       | _, _, _ => False
-       end; |}.
-Definition V_CUT : VLSM Sequent :=
-    mk_vlsm V_CUT_machine.
-
-End cut_rule.
